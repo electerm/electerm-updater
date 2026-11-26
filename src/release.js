@@ -43,22 +43,31 @@ async function download (options, dir, progress) {
     agent = new Agent(proxy)
   }
   const http = require('axios').create({ proxy: false, httpsAgent: agent, timeout: 60000, signal })
-  const release = await http.get('https://api.github.com/repos/electerm/electerm/releases/tags/' + tag)
-  const asset = assetFor(release.data, tag, src)
-  const file = path.join(dir, asset.name)
-  const { data } = await http.get(downloadUrl(tag, asset.name, mirror), { responseType: 'stream' })
+  const platform = src?.startsWith('win') ? 'win32' : src?.startsWith('mac') ? 'darwin' : 'linux'
+  format(src, platform)
+  const name = 'electerm-' + tag.slice(1) + '-' + src
+  const atomgit = mirror === 'atomgit'
+  const checksumUrl = atomgit ? downloadUrl(tag, 'checksum.json', mirror) : 'https://electerm.org/sha256/' + name + '.checksum'
+  const { data: record } = await http.get(checksumUrl, { responseType: atomgit ? 'json' : 'text', maxContentLength: 1024 * 1024 })
+  const fields = typeof record === 'string' && record.trim().split(/\s+/)
+  const digest = atomgit ? record?.[name] : fields?.length === 2 && fields[1] === name && fields[0]
+  if (typeof digest !== 'string' || !/^[a-f0-9]{64}$/i.test(digest)) throw new Error('Missing SHA-256 checksum for ' + name)
+  const file = path.join(dir, name)
+  const { data, headers } = await http.get(downloadUrl(tag, name, mirror), { responseType: 'stream' })
+  const size = Number(headers?.['content-length'])
   const hash = createHash('sha256')
   let bytes = 0
   let last = -1
   data.on('data', chunk => {
     hash.update(chunk)
     bytes += chunk.length
-    const percent = Math.min(99, Math.floor(100 * bytes / asset.size))
+    if (!(size > 0)) return
+    const percent = Math.min(99, Math.floor(100 * bytes / size))
     if (percent !== last) progress(percent)
     last = percent
   })
   await pipeline(data, fs.createWriteStream(file, { flags: 'wx', mode: 0o600 }), { signal })
-  if (bytes !== asset.size || 'sha256:' + hash.digest('hex') !== asset.digest) {
+  if (!bytes || hash.digest('hex') !== digest.toLowerCase()) {
     throw new Error('The downloaded file failed release verification')
   }
   return file

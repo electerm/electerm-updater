@@ -4,6 +4,7 @@ const os = require('os')
 const path = require('path')
 const { spawn, execFileSync } = require('child_process')
 const { once } = require('events')
+const { locale } = require('./locale')
 const { format, download } = require('./release')
 
 function archiveRoot (dir, exe) {
@@ -83,23 +84,46 @@ async function prepare (options, dir, progress, preparing = () => {}) {
   }
   const script = windows ? 'install.ps1' : 'install.sh'
   fs.copyFileSync(path.join(__dirname, script), path.join(dir, script))
-  return { kind, target, payload, script, dir }
+  return { kind, target, payload, script, dir, language: locale(options.language).language }
 }
 
 async function launch (plan, pid) {
   if (!Number.isSafeInteger(pid) || pid < 0) throw new Error('Invalid Electerm process ID')
   const { dir, script, kind, target, payload } = plan
   const windows = process.platform === 'win32'
-  const args = windows ? ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File'] : []
-  args.push(path.join(dir, script), kind, payload, target, String(pid))
-  const log = fs.openSync(path.join(dir, 'install.log'), 'a', 0o600)
+  const flags = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File']
+  let args = [path.join(dir, script), kind, payload, target, String(pid)]
+  const helperLog = path.join(dir, windows ? 'bootstrap.log' : 'install.log')
+  const log = fs.openSync(helperLog, 'a', 0o600)
   try {
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
-    const child = spawn(windows ? 'powershell.exe' : '/bin/sh', args, {
-      cwd: dir, detached: true, windowsHide: true, stdio: ['ignore', log, log], env
+    const messages = locale(plan.language)
+    fs.writeFileSync(path.join(dir, 'failure.txt'), messages.failed)
+    fs.writeFileSync(path.join(dir, 'title.txt'), messages.title)
+    const powershell = windows && path.join(process.env.SystemRoot, 'System32/WindowsPowerShell/v1.0/powershell.exe')
+    // Detached Windows PowerShell can exit without executing its script.
+    // A short bootstrap starts the installer outside the app's process job.
+    if (windows) {
+      const wrapper = path.join(dir, 'launch.ps1')
+      fs.copyFileSync(path.join(__dirname, 'launch.ps1'), wrapper)
+      env.ELECTERM_INSTALL_COMMAND = [powershell, ...flags, ...args].map(arg => '"' + arg + '"').join(' ')
+      args = [...flags, wrapper, dir]
+    }
+    const child = spawn(windows ? powershell : '/bin/sh', args, {
+      cwd: dir, detached: !windows, windowsHide: true, stdio: ['ignore', log, log], env
     })
     await once(child, 'spawn')
+    if (pid > 0) {
+      const deadline = Date.now() + 15000
+      while (!fs.existsSync(path.join(dir, 'ready'))) {
+        if (child.exitCode !== null || Date.now() > deadline) {
+          const detail = fs.readFileSync(helperLog, 'utf8').trim()
+          throw new Error(detail ? messages.failed + ' — ' + detail : messages.failed)
+        }
+        await new Promise(resolve => setTimeout(resolve, 50))
+      }
+    }
     child.unref()
     return child
   } finally {
@@ -108,31 +132,32 @@ async function launch (plan, pid) {
 }
 
 if (require.main === module) {
-  const [tag, src, exe, pid = '0'] = process.argv.slice(2)
+  const [tag, src, exe, pid = '0', language] = process.argv.slice(2)
+  const messages = locale(language)
   async function main () {
     if (!exe) throw new Error('Usage: electerm-updater <vX.Y.Z> <installSrc> <installed executable> [PID to wait for]')
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'electerm-update-'))
     let installer
     try {
       const progress = percent => {
-        if (process.stderr.isTTY) process.stderr.write('\rDownloading ' + percent + '%')
+        if (process.stderr.isTTY) process.stderr.write('\r' + messages.download + ' ' + percent + '%')
       }
-      const plan = await prepare({ tag, src, exe }, dir, progress)
+      const plan = await prepare({ tag, src, exe, language }, dir, progress)
       if (process.stderr.isTTY) process.stderr.write('\n')
       installer = await launch(plan, Number(pid))
-      console.log('Installer started. Installation log: ' + path.join(dir, 'install.log'))
+      console.log(messages.started + ' — ' + path.join(dir, 'install.log'))
     } catch (err) {
       fs.rmSync(dir, { recursive: true, force: true })
       throw err
     }
     installer.ref()
-    const [code] = await once(installer, 'exit')
-    if (code !== 0) throw new Error('Installation failed. See ' + path.join(dir, 'install.log'))
+    const code = installer.exitCode ?? (await once(installer, 'exit'))[0]
+    if (code !== 0) throw new Error(messages.failed + ' — ' + path.join(dir, 'install.log'))
   }
   main().catch(err => {
-    console.error(err.message)
+    console.error(messages.failed + ' — ' + err.message)
     process.exitCode = 1
   })
 }
 
-module.exports = { archiveRoot, prepare, launch }
+module.exports = { archiveRoot, prepare, launch, locale }

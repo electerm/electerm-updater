@@ -15,6 +15,10 @@ function temporary (t) {
   return dir
 }
 
+test('deb reopens through the original desktop session after elevation', { skip: process.platform !== 'linux' || process.getuid() === 0 }, () => {
+  execFileSync('/bin/sh', [path.join(__dirname, 'deb-relaunch.sh')])
+})
+
 test('matches the exact release variant and excludes store packages and metadata', () => {
   for (const [platform, sources] of Object.entries({
     win32: ['win7.tar.gz', 'win-x64-loose.tar.gz', 'win-x64-portable.tar.gz', 'win-arm64-installer.exe'],
@@ -33,24 +37,53 @@ test('matches the exact release variant and excludes store packages and metadata
   }
 })
 
-test('rejects truncated and same-length corrupt mirror downloads', async t => {
-  const tag = 'v1.2.3'
-  const src = 'win-x64.tar.gz'
-  const digest = 'sha256:' + createHash('sha256').update('good').digest('hex')
-  const asset = { name: 'electerm-1.2.3-' + src, size: 4, digest }
-  let body
-  t.mock.method(require('axios'), 'create', () => ({
-    get: async url => url.startsWith('https://api.github.com/')
-      ? { data: { tag_name: tag, assets: [asset] } }
-      : { data: Readable.from([Buffer.from(body)]) }
-  }))
-  const run = () => download({ tag, src, mirror: 'r2' }, temporary(t), () => {})
-  body = 'go'
-  await assert.rejects(run, /verification/)
-  body = 'evil'
-  await assert.rejects(run, /verification/)
-  body = 'good'
-  assert.equal(fs.readFileSync(await run(), 'utf8'), 'good')
+for (const mirror of ['atomgit', 'r2', 'github', 'gh-proxy', 'sourceforge']) {
+  test(mirror + ' checks the exact asset before accepting a download', async t => {
+    const tag = 'v1.2.3'
+    const src = 'win-x64.tar.gz'
+    const name = 'electerm-1.2.3-' + src
+    const digest = createHash('sha256').update('good').digest('hex')
+    const atomgit = mirror === 'atomgit'
+    const url = atomgit
+      ? 'https://atomgit.com/electerm/electerm/releases/download/v1.2.3/checksum.json'
+      : 'https://electerm.org/sha256/' + name + '.checksum'
+    let record
+    let body = 'good'
+    let assets = 0
+    t.mock.method(require('axios'), 'create', () => ({
+      get: async (request, config) => {
+        if (config.responseType === 'stream') {
+          assets++
+          assert.ok(request.includes(name))
+          return { data: Readable.from([Buffer.from(body)]) }
+        }
+        assert.equal(request, url)
+        return { data: record }
+      }
+    }))
+    const run = () => download({ tag, src, mirror }, temporary(t), () => {})
+    for (const [file, hash] of [[name + '.other', digest], [name, 'invalid']]) {
+      record = atomgit ? { [file]: hash } : hash + '  ' + file
+      await assert.rejects(run, /checksum/)
+    }
+    assert.equal(assets, 0)
+    record = atomgit ? { [name]: digest } : digest + '  ' + name + '\n'
+    assert.equal(fs.readFileSync(await run(), 'utf8'), 'good')
+    for (body of ['go', 'evil']) await assert.rejects(run, /verification/)
+  })
+}
+
+test('all updater languages include every message and the release placeholder', () => {
+  const { locale } = require('..')
+  const messages = require('../src/messages.json')
+  for (const [id, strings] of Object.entries(messages)) {
+    assert.equal(locale(id.replace('_', '-')).language, id)
+    assert.deepEqual(Object.keys(strings).sort(), Object.keys(messages.en_us).sort())
+    assert.ok(Object.values(strings).every(Boolean))
+    assert.ok(strings.confirm.includes('{tag}'))
+  }
+  assert.equal(locale('zh-Hant-HK').language, 'zh_tw')
+  assert.equal(locale('unknown').language, 'en_us')
 })
 
 test('finds flat, wrapped and loose archives and rejects ambiguous layouts', t => {
@@ -65,7 +98,45 @@ test('finds flat, wrapped and loose archives and rejects ambiguous layouts', t =
   assert.throws(() => archiveRoot(dir, 'electerm.exe'))
 })
 
-test('archive install replaces application resources and preserves adjacent user data', { skip: process.platform === 'darwin' }, t => {
+test('Windows helper survives the calling process and opens the installed executable', { skip: process.platform !== 'win32' }, async t => {
+  const root = temporary(t)
+  const job = fs.mkdtempSync(path.join(root, 'electerm-update-'))
+  const target = path.join(root, 'installed app', 'electerm.exe')
+  const script = 'install.ps1'
+  fs.mkdirSync(path.dirname(target))
+  fs.copyFileSync(require.resolve('@electerm/updater/install.ps1'), path.join(job, script))
+  // Imitate NSIS's final /D argument, which includes the full directory even
+  // when the ordinary Windows argument parser would split it on spaces.
+  const fixture = `using System.IO;
+    class Fixture {
+      static void Main() {
+        string cmd = System.Environment.CommandLine;
+        int start = cmd.IndexOf(" /S /D=");
+        if (start >= 0) {
+          File.Copy(typeof(Fixture).Assembly.Location, Path.Combine(cmd.Substring(start + 7), "electerm.exe"));
+        } else {
+          File.WriteAllText("reopened", System.Diagnostics.Process.GetCurrentProcess().SessionId.ToString());
+        }
+      }
+    }`
+  const payload = path.join(job, 'release installer.exe')
+  execFileSync('powershell.exe', ['-NoProfile', '-Command',
+    "Add-Type -TypeDefinition '" + fixture + "' -OutputAssembly 'release installer.exe' -OutputType WindowsApplication"
+  ], { cwd: job })
+  const plan = { dir: job, kind: 'exe', script, payload, target, language: 'zh_cn' }
+  const caller = "require('./src').launch(JSON.parse(process.env.TEST_PLAN), process.pid).catch(e => { console.error(e); process.exitCode = 1 })"
+  execFileSync(process.env.UPDATER_TEST_ELECTRON || process.execPath, ['-e', caller], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', TEST_PLAN: JSON.stringify(plan) },
+    timeout: 25000
+  })
+  const marker = path.join(path.dirname(target), 'reopened')
+  for (let i = 0; i < 100 && !fs.existsSync(marker); i++) await new Promise(resolve => setTimeout(resolve, 100))
+  assert.ok(fs.existsSync(marker), fs.readFileSync(path.join(job, 'install.log'), 'utf8') || 'Installer exited without reopening Electerm')
+  const session = execFileSync('powershell.exe', ['-NoProfile', '-Command', '(Get-Process -Id $PID).SessionId'], { encoding: 'utf8' }).trim()
+  assert.equal(fs.readFileSync(marker, 'utf8'), session)
+})
+
+test('archive install replaces application resources and preserves adjacent user data', { skip: process.platform === 'darwin' }, async t => {
   const dir = temporary(t)
   const job = fs.mkdtempSync(path.join(dir, 'electerm-update-'))
   const target = path.join(dir, 'installed app')
@@ -83,9 +154,15 @@ test('archive install replaces application resources and preserves adjacent user
   if (windows) {
     // A GUI-subsystem fixture exits immediately without opening a window.
     execFileSync('powershell.exe', ['-NoProfile', '-Command',
-      "Add-Type -TypeDefinition 'public class Fixture { public static void Main() {} }' -OutputAssembly electerm.exe -OutputType WindowsApplication"
+      "Add-Type -TypeDefinition 'public class Fixture { public static void Main() { System.IO.File.WriteAllText(\"reopened\", \"new\"); } }' -OutputAssembly electerm.exe -OutputType WindowsApplication"
     ], { cwd: payload })
-    execFileSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', copy, 'tar.gz', payload, target, '0'], { timeout: 20000 })
+    const plan = { dir: job, kind: 'tar.gz', script, payload, target }
+    execFileSync(process.env.UPDATER_TEST_ELECTRON || process.execPath, ['-e',
+      "require('./src').launch(JSON.parse(process.env.TEST_PLAN), process.pid).catch(e => { console.error(e); process.exitCode = 1 })"
+    ], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1', TEST_PLAN: JSON.stringify(plan) }, timeout: 25000 })
+    const marker = path.join(target, 'reopened')
+    for (let i = 0; i < 100 && !fs.existsSync(marker); i++) await new Promise(resolve => setTimeout(resolve, 100))
+    assert.ok(fs.existsSync(marker), fs.readFileSync(path.join(job, 'install.log'), 'utf8'))
   } else {
     fs.writeFileSync(path.join(payload, 'electerm'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
     execFileSync('/bin/sh', [copy, 'tar.gz', payload, target, '0'])

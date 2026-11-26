@@ -14,7 +14,7 @@ electerm-updater 是 Electerm 桌面版的更新工具，既可以作为 Node.js
 | Linux `tar.gz` 或 AppImage | 替换解压目录中的应用文件或原有的 AppImage 文件，然后重新打开 Electerm。 |
 | Linux `deb` 或 `rpm` | 通过系统包管理器安装新版本，然后重新打开 Electerm。 |
 
-APPX 和 Snap 由各自的应用商店负责更新。`.blockmap` 文件是发布元数据。更新工具会根据指定的 GitHub 发布标签和安装来源精确匹配文件，包括架构和 `-legacy` 等后缀。从镜像下载的文件也会按 GitHub 公布的文件大小和 SHA-256 摘要进行校验。
+APPX 和 Snap 由各自的应用商店负责更新。`.blockmap` 文件是发布元数据。更新工具会根据指定的 GitHub 发布标签和安装来源精确匹配文件，包括架构和 `-legacy` 等后缀。使用 AtomGit 时从该版本的 checksum.json 获取 SHA-256，其他来源使用 electerm.org 上对应文件的 .checksum，两者均在安装前完成校验。
 
 ## 独立运行
 
@@ -29,6 +29,8 @@ npx --package=@electerm/updater electerm-updater v5.15.0 linux-x64.tar.gz /opt/e
 如果 Electerm 仍在运行，可以将其进程 ID（PID）作为第四个参数传入。安装程序会等待最多两分钟，让你关闭 Electerm。从桌面应用发起更新时，Electerm 会自动提供这些参数，并沿用已有的镜像和代理设置。
 
 在 Linux 上，更新受保护的目录或通过包管理器安装时，系统会通过 PolicyKit 弹窗请求授权。Windows 和 macOS 会按需分别显示 UAC 和管理员授权提示。安装失败时，临时目录和安装日志会保留，方便排查。
+
+独立运行时，第五个参数可指定语言（例如 zh_cn），第四个参数传 Electerm 进程 ID，应用已关闭时传 0。在桌面应用内更新时自动沿用当前语言。
 
 ## 开发与发布
 

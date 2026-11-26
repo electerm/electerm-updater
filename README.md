@@ -7,12 +7,12 @@ A Node.js CLI and installer library for Electerm desktop releases. In Electermâ€
 | Installation source | Installation |
 | --- | --- |
 | Windows tar.gz, including portable, loose and Windows 7 | Replace application files in the current directory and reopen Electerm. |
-| Windows installer.exe | Run the release installer. |
+| Windows installer.exe | Run the release installer and reopen Electerm. |
 | macOS dmg, including mac10 | Mount the image read-only, stage the app bundle, replace the installed bundle and reopen it. |
 | Linux tar.gz or AppImage | Replace files in the extracted directory or replace the original AppImage and reopen Electerm. |
 | Linux deb or rpm | Install the release through the system package manager and reopen Electerm. |
 
-APPX and Snap updates belong to their stores. Blockmaps are release metadata. The updater selects the exact GitHub asset for the requested tag and installation source, including architecture and legacy suffixes. Downloads from mirrors must match the size and SHA-256 digest published by GitHub.
+APPX and Snap updates belong to their stores. Blockmaps are release metadata. The updater selects the exact GitHub asset for the requested tag and installation source, including architecture and legacy suffixes. AtomGit downloads use the releaseâ€™s checksum.json. Other mirrors use the per-asset .checksum file on electerm.org. Every download must match its SHA-256 digest.
 
 ## Standalone use
 
@@ -22,7 +22,7 @@ The CLI requires Node.js 18 or later. Close Electerm first, or pass its process 
 npx --package=@electerm/updater electerm-updater v5.15.0 linux-x64.tar.gz /opt/electerm/electerm
 ```
 
-The optional fourth argument is the Electerm PID. For AppImage installations, pass the installed AppImage path. For macOS, pass the executable inside the installed app bundle. The desktop integration supplies these values automatically and uses the existing mirror and proxy preferences.
+The optional fourth argument is the Electerm PID (use 0 if already closed). The fifth selects an Electerm language, for example zh_cn. The desktop app passes its current language automatically. For AppImage installations, pass the installed AppImage path. For macOS, pass the executable inside the installed app bundle. The desktop integration supplies these values automatically and uses the existing mirror and proxy preferences.
 
 Linux uses a graphical PolicyKit prompt for protected destinations or package installation. Windows requests elevation through UAC when needed, and macOS uses its administrator prompt. A failed installation retains its temporary directory and installation log for diagnosis.
 

@@ -69,14 +69,16 @@ dir=$(dirname "$0")
 case "${dir##*/}" in electerm-update-*) ;; *) echo 'Invalid updater directory'; exit 1 ;; esac
 case "$payload" in "$dir"/*) ;; *) echo 'Invalid staged payload'; exit 1 ;; esac
 failed() {
-  msg="Electerm update failed. See $dir/install.log"
+  title=$(cat "$dir/title.txt")
+  msg="$(cat "$dir/failure.txt") — $dir/install.log"
   if [ "$kind" = dmg ]; then
     /usr/bin/osascript -e 'on run argv' -e 'display alert (item 1 of argv)' -e 'end run' "$msg"
   elif command -v notify-send >/dev/null; then
-    notify-send 'Electerm update' "$msg"
+    notify-send "$title" "$msg"
   fi
 }
 trap 'if [ "$?" != 0 ]; then failed; fi' EXIT
+if [ "$pid" -gt 0 ]; then touch "$dir/ready"; fi
 i=0
 while [ "$pid" -gt 0 ] && kill -0 "$pid" 2>/dev/null; do
   [ "$i" -lt 120 ] || { echo 'Timed out waiting for Electerm to close'; exit 1; }
@@ -103,6 +105,15 @@ cd /
 case "$kind" in
   dmg) /usr/bin/open "$target" ;;
   tar.gz) "$target/electerm" </dev/null >/dev/null 2>&1 & ;;
-  AppImage|rpm|deb) "$target" </dev/null >/dev/null 2>&1 & ;;
+  deb|rpm)
+    # Launch through the desktop session after pkexec returns to the user.
+    if command -v gtk-launch >/dev/null && gtk-launch electerm; then :
+    else
+      nohup "$target" </dev/null >>"$dir/install.log" 2>&1 &
+      app_pid=$!
+      sleep 1
+      if ! kill -0 "$app_pid" 2>/dev/null; then wait "$app_pid"; fi
+    fi ;;
+  AppImage) "$target" </dev/null >/dev/null 2>&1 & ;;
 esac
 rm -rf "$dir"
