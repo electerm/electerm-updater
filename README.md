@@ -1,5 +1,7 @@
 # electerm-updater
 
+**English** | [简体中文](./README.cn.md)
+
 A Node.js CLI and installer library for Electerm desktop releases. In Electerm’s desktop integration, the app supplies the progress window and the installed release source. The **Upgrade** button opens a progress window. You can cancel while the download is in progress. Once the file is verified and prepared, **Close Electerm and install** ends open sessions and hands installation to a separate process. Archive installations keep adjacent files, including the Windows portable profile.
 
 | Installation source | Installation |
