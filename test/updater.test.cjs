@@ -55,6 +55,7 @@ for (const mirror of ['atomgit', 'r2', 'github', 'gh-proxy', 'sourceforge']) {
         if (config.responseType === 'stream') {
           assets++
           assert.ok(request.includes(name))
+          if (mirror === 'r2') assert.equal(request, 'https://r2.electerm.org/r/' + name)
           return { data: Readable.from([Buffer.from(body)]) }
         }
         assert.equal(request, url)

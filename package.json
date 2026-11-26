@@ -1,6 +1,6 @@
 {
   "name": "@electerm/updater",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Install a matching Electerm desktop release",
   "license": "MIT",
   "bin": {

@@ -27,7 +27,7 @@ function downloadUrl (tag, name, mirror) {
   const github = 'https://github.com/electerm/electerm/releases/download/' + tail
   switch (mirror) {
     case 'atomgit': return 'https://atomgit.com/electerm/electerm/releases/download/' + tail
-    case 'r2': return 'https://electerm-store.html5beta.com/r/' + name
+    case 'r2': return 'https://r2.electerm.org/r/' + name
     case 'gh-proxy': return 'https://mirror.electerm.org/' + github
     case 'sourceforge': return 'https://master.dl.sourceforge.net/project/electerm.mirror/' + tail + '?viasf=1'
     default: return github
