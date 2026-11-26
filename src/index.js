@@ -89,8 +89,12 @@ async function prepare (options, dir, progress, preparing = () => {}) {
 
 async function launch (plan, pid) {
   if (!Number.isSafeInteger(pid) || pid < 0) throw new Error('Invalid Electerm process ID')
-  const { dir, script, kind, target, payload } = plan
+  const { script, kind, target } = plan
   const windows = process.platform === 'win32'
+  // PowerShell expands 8.3 temp paths when resolving the script filename.
+  // Give the script its payload in that same canonical form.
+  const dir = windows ? fs.realpathSync.native(plan.dir) : plan.dir
+  const payload = windows ? fs.realpathSync.native(plan.payload) : plan.payload
   const flags = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File']
   let args = [path.join(dir, script), kind, payload, target, String(pid)]
   const helperLog = path.join(dir, windows ? 'bootstrap.log' : 'install.log')
@@ -114,17 +118,18 @@ async function launch (plan, pid) {
       cwd: dir, detached: !windows, windowsHide: true, stdio: ['ignore', log, log], env
     })
     await once(child, 'spawn')
+    child.unref()
     if (pid > 0) {
       const deadline = Date.now() + 15000
       while (!fs.existsSync(path.join(dir, 'ready'))) {
         if (child.exitCode !== null || Date.now() > deadline) {
-          const detail = fs.readFileSync(helperLog, 'utf8').trim()
+          const detail = [helperLog, path.join(dir, 'install.log')]
+            .filter(file => fs.existsSync(file)).map(file => fs.readFileSync(file, 'utf8').trim()).filter(Boolean).join('\n')
           throw new Error(detail ? messages.failed + ' — ' + detail : messages.failed)
         }
         await new Promise(resolve => setTimeout(resolve, 50))
       }
     }
-    child.unref()
     return child
   } finally {
     fs.closeSync(log)

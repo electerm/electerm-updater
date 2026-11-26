@@ -102,6 +102,8 @@ try {
   $failed = Get-Content -LiteralPath (Join-Path $jobDir 'failure.txt') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
   $message = "$failed - $detail"
   Write-InstallLog $message
+  # The caller is still open and displays startup failures itself.
+  if ($AppProcess -gt 0 -and !(Test-Path -LiteralPath (Join-Path $jobDir 'ready'))) { exit 1 }
   Add-Type -AssemblyName System.Windows.Forms
   [Windows.Forms.MessageBox]::Show($message, $title) | Out-Null
   exit 1
