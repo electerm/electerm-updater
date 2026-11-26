@@ -6,7 +6,7 @@ const path = require('path')
 const { Readable } = require('stream')
 const { createHash } = require('crypto')
 const { execFileSync } = require('child_process')
-const { format, assetFor, download } = require('../release')
+const { format, assetFor, download } = require('@electerm/updater/release')
 const { archiveRoot } = require('..')
 
 function temporary (t) {
@@ -79,7 +79,7 @@ test('archive install replaces application resources and preserves adjacent user
   fs.writeFileSync(path.join(payload, 'resources/app.asar'), 'new')
   const script = windows ? 'install.ps1' : 'install.sh'
   const copy = path.join(job, script)
-  fs.copyFileSync(path.join(__dirname, '..', script), copy)
+  fs.copyFileSync(require.resolve('@electerm/updater/' + script), copy)
   if (windows) {
     // A GUI-subsystem fixture exits immediately without opening a window.
     execFileSync('powershell.exe', ['-NoProfile', '-Command',

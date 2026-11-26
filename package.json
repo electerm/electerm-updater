@@ -4,7 +4,7 @@
   "description": "Install a matching Electerm desktop release",
   "license": "MIT",
   "bin": {
-    "electerm-updater": "index.js"
+    "electerm-updater": "src/index.js"
   },
   "dependencies": {
     "axios": "1.20.0",
@@ -12,7 +12,7 @@
     "socks-proxy-agent": "8.0.1",
     "tar": "7.5.22"
   },
-  "main": "index.js",
+  "main": "./src/index.js",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/electerm/electerm-updater.git"
@@ -30,13 +30,23 @@
     "pack:check": "npm pack --dry-run"
   },
   "files": [
-    "index.js",
-    "release.js",
-    "install.sh",
-    "install.ps1",
+    "src",
     "README.cn.md"
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "exports": {
+    ".": "./src/index.js",
+    "./index": "./src/index.js",
+    "./index.js": "./src/index.js",
+    "./release": "./src/release.js",
+    "./release.js": "./src/release.js",
+    "./install.sh": "./src/install.sh",
+    "./install.ps1": "./src/install.ps1",
+    "./package.json": "./package.json",
+    "./README.md": "./README.md",
+    "./README.cn.md": "./README.cn.md",
+    "./LICENSE": "./LICENSE"
   }
 }
