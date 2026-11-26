@@ -89,17 +89,17 @@ try {
       }
     }
   } else { throw "Unsupported package: $Kind" }
-  # PowerShell still owns install.log while it is running.
+  # Keep the logs and use operators available in Windows 7's PowerShell 2.0.
   if ($Elevated) { exit 0 }
   foreach ($item in Get-ChildItem -LiteralPath $jobDir -Force) {
-    if ($item.Name -notin @('install.log', 'bootstrap.log')) {
+    if (@('install.log', 'bootstrap.log') -notcontains $item.Name) {
       Remove-Item -LiteralPath (Get-ChildPath $jobDir $item.Name) -Force -Recurse
     }
   }
 } catch {
   $detail = $_.Exception.Message
-  $title = Get-Content -LiteralPath (Join-Path $jobDir 'title.txt') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
-  $failed = Get-Content -LiteralPath (Join-Path $jobDir 'failure.txt') -Raw -Encoding UTF8 -ErrorAction SilentlyContinue
+  $title = Get-Content -LiteralPath (Join-Path $jobDir 'title.txt') -Encoding UTF8 -ErrorAction SilentlyContinue
+  $failed = Get-Content -LiteralPath (Join-Path $jobDir 'failure.txt') -Encoding UTF8 -ErrorAction SilentlyContinue
   $message = "$failed - $detail"
   Write-InstallLog $message
   # The caller is still open and displays startup failures itself.

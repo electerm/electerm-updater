@@ -98,6 +98,13 @@ test('finds flat, wrapped and loose archives and rejects ambiguous layouts', t =
   assert.throws(() => archiveRoot(dir, 'electerm.exe'))
 })
 
+test('Windows helpers avoid PowerShell 3 containment operators and raw reads', () => {
+  for (const name of ['install.ps1', 'launch.ps1']) {
+    const script = fs.readFileSync(path.join(__dirname, '../src', name), 'utf8')
+    assert.doesNotMatch(script, /-(?:notin|in|raw)\b/i)
+  }
+})
+
 test('Windows helper survives the calling process and opens the installed executable', { skip: process.platform !== 'win32' }, async t => {
   const root = temporary(t)
   const job = fs.mkdtempSync(path.join(root, 'electerm-update-'))

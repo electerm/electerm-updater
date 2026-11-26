@@ -21,6 +21,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      - name: Exercise the archive handoff from the Windows 7 Electron runtime
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP 'electron-v22.3.27-win32-x64.zip'
+          Invoke-WebRequest "https://github.com/electron/electron/releases/download/v22.3.27/electron-v22.3.27-win32-x64.zip" -OutFile $zip
+          $runtime = Join-Path $env:RUNNER_TEMP 'electron-win7'
+          Expand-Archive -LiteralPath $zip -DestinationPath $runtime
+          $env:UPDATER_TEST_ELECTRON = Join-Path $runtime 'electron.exe'
+          node --test --test-name-pattern="archive install replaces" test/updater.test.cjs
 
   check:
     runs-on: ubuntu-24.04
